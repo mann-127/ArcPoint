@@ -94,7 +94,7 @@ jupyter notebook notebooks/exploration.ipynb
 ### Project Structure
 
 ```
-arcpoint-exercise/
+ArcPoint/
 ├── data/                        # Data generation
 │   └── mock_generator.py        
 ├── src/                         # Core routing system
