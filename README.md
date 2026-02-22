@@ -1,4 +1,4 @@
-# Arcpoint Context Engine
+# ArcPoint: Context Engine
 
 > Predictive Circuit Breaker for Intelligent Request Routing
 
