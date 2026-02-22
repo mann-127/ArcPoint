@@ -151,9 +151,9 @@ arcpoint-exercise/
 - Cold start period: 5 minutes
 
 ### Production Roadmap
-1. **Week 1:** Redis persistence, async logging, monitoring
-2. **Week 2:** Multi-backend optimization, cost-aware routing
-3. **Week 3+:** SLA tiers, predictive scaling, causal inference
+1. Redis persistence, async logging, monitoring
+2. Multi-backend optimization, cost-aware routing
+3. SLA tiers, predictive scaling, causal inference
 
 ---
 
@@ -219,7 +219,7 @@ See [advanced/README.md](advanced/README.md) for detailed documentation.
 
 ---
 
-## Bonus: Option 2 (Agent-Centric Approach)
+## Bonus: Agent-Centric Approach
 
 As an additional exploration, I also implemented a **proof-of-concept LLM-based routing agent** in [`option2-agent/`](option2-agent/).
 
