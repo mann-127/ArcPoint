@@ -1,4 +1,4 @@
-# ArcPoint: Context Engine
+# ArcPoint: Predictive Latency Router
 
 ![Python Version](https://img.shields.io/badge/python-3.12+-green.svg)
 ![Code Size](https://img.shields.io/github/languages/code-size/mann-127/ArcPoint)
