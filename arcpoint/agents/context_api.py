@@ -169,9 +169,16 @@ class ContextAPI:
             User context dictionary
         """
         # Simplified mock - in production, query from database
+        tier = "standard"
+        lowered = user_id.lower()
+        if "premium" in lowered or "pro" in lowered:
+            tier = "premium"
+        elif "free" in lowered:
+            tier = "free"
+
         return {
             "user_id": user_id,
-            "tier": "enterprise",
+            "tier": tier,
             "sla_latency_ms": 500,
             "monthly_quota": 1000000,
             "quota_used": 750000,
@@ -195,5 +202,5 @@ class ContextAPI:
             "current_requests_per_min": current_rpm,
             "predicted_requests_per_min": predicted_rpm,
             "confidence": 0.85,
-            "trend": "increasing" if predicted_rpm > current_rpm else "stable"
+            "trend": "up" if predicted_rpm > current_rpm else "stable"
         }

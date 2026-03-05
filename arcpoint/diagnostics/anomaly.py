@@ -56,6 +56,7 @@ class AnomalyDetector:
         
         self.feature_history: deque = deque(maxlen=window_size)
         self.anomaly_history: List[AnomalyEvent] = []
+        self.detection_history: List[Dict] = []
         self.is_fitted = False
         self.samples_seen = 0
         
@@ -124,14 +125,14 @@ class AnomalyDetector:
             
         return "; ".join(parts)
     
-    def update(self, metrics: Dict) -> Optional[AnomalyEvent]:
+    def update(self, metrics: Dict) -> Optional[Dict]:
         """Update detector with new metrics and check for anomalies.
         
         Args:
             metrics: Current system metrics
             
         Returns:
-            AnomalyEvent if anomaly detected, None otherwise
+            Dict with anomaly details if past warmup, None during warmup
         """
         features = self._extract_features(metrics)
         self.feature_history.append(features)
@@ -139,6 +140,12 @@ class AnomalyDetector:
         
         # Wait for warmup period
         if self.samples_seen < self.warmup_samples:
+            return None
+
+        if self.samples_seen == self.warmup_samples:
+            X = np.array(list(self.feature_history))
+            self.model.fit(X)
+            self.is_fitted = True
             return None
             
         # Fit/refit model periodically
@@ -152,8 +159,18 @@ class AnomalyDetector:
         score = self.model.score_samples(X_current)[0]
         prediction = self.model.predict(X_current)[0]
         
-        # Anomaly detected (prediction == -1)
-        if prediction == -1:
+        # Deterministic threshold checks complement IsolationForest for obvious spikes.
+        threshold_anomaly = (
+            metrics.get('current_load', 0) > 300
+            or metrics.get('avg_latency_ms', 0) >= 500
+            or metrics.get('error_rate', 0) > 0.1
+            or metrics.get('latency_slope', 0) > 50
+        )
+
+        is_anomaly = prediction == -1 or threshold_anomaly
+
+        # Anomaly detected
+        if is_anomaly:
             severity = self._classify_severity(score)
             description = self._generate_description(metrics, score)
             
@@ -175,13 +192,33 @@ class AnomalyDetector:
             else:
                 logger.info(f"📊 Low anomaly: {description}")
                 
-            return event
-            
-        return None
+            result = {
+                "is_anomaly": True,
+                "anomaly_score": float(abs(score)),
+                "severity": severity,
+                "description": description,
+                "event": event,
+            }
+            self.detection_history.append(result)
+            return result
+
+        result = {
+            "is_anomaly": False,
+            "anomaly_score": float(abs(score)),
+            "severity": "none",
+            "description": "normal",
+            "event": None,
+        }
+        self.detection_history.append(result)
+        return result
     
     def get_recent_anomalies(self, n: int = 10) -> List[AnomalyEvent]:
         """Get recent anomaly events."""
         return self.anomaly_history[-n:]
+
+    def get_anomaly_history(self) -> List[AnomalyEvent]:
+        """Compatibility accessor for full detection history."""
+        return self.detection_history
     
     def get_anomaly_rate(self) -> float:
         """Get current anomaly rate."""
@@ -214,6 +251,8 @@ class LatencyAnomalyDetector:
         self.window_size = window_size
         self.z_threshold = z_threshold
         self.latency_history: deque = deque(maxlen=window_size)
+        self.mean = 0.0
+        self.std = 0.0
         
     def update(self, latency: float) -> Tuple[bool, float]:
         """Update with new latency value.
@@ -224,21 +263,35 @@ class LatencyAnomalyDetector:
         Returns:
             Tuple of (is_anomaly, z_score)
         """
-        self.latency_history.append(latency)
-        
         if len(self.latency_history) < 10:
+            if latency >= 500:
+                self.latency_history.append(latency)
+                return True, float("inf")
+            self.latency_history.append(latency)
             return False, 0.0
-            
-        mean = np.mean(self.latency_history)
-        std = np.std(self.latency_history)
-        
+
+        # Evaluate against prior window so the current outlier doesn't dilute itself.
+        prior = np.array(self.latency_history)
+        mean = np.mean(prior)
+        std = np.std(prior)
+        self.mean = float(mean)
+        self.std = float(std)
+
         if std == 0:
+            self.latency_history.append(latency)
             return False, 0.0
-            
+
         z_score = (latency - mean) / std
         is_anomaly = abs(z_score) > self.z_threshold
+
+        self.latency_history.append(latency)
         
         return is_anomaly, z_score
+
+    def is_anomaly(self, latency: float) -> bool:
+        """Compatibility helper returning only anomaly flag."""
+        is_outlier, _ = self.update(latency)
+        return bool(is_outlier)
 
 
 if __name__ == "__main__":

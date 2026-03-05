@@ -77,7 +77,7 @@ class ChaosSimulator:
             
         descriptions = {
             FailureType.LATENCY_SPIKE: f"Latency spike ({intensity*100:.0f}% increase) on {affected_backends}",
-            FailureType.BACKEND_DOWN: f"Backend {affected_backends} is DOWN",
+            FailureType.BACKEND_DOWN: f"BACKEND_DOWN on {affected_backends}",
             FailureType.PARTIAL_FAILURE: f"Partial failure: {intensity*100:.0f}% of requests failing on {affected_backends}",
             FailureType.CASCADING_FAILURE: f"Cascading failure starting from {affected_backends}",
             FailureType.TRAFFIC_SURGE: f"Traffic surge: {intensity*10:.0f}x normal load",
@@ -168,6 +168,13 @@ class ChaosSimulator:
                 metrics['avg_latency_ms'] *= 2  # Slow when connected
                 
         return metrics
+
+    def step(self) -> None:
+        """Advance simulation time by one step without applying metrics."""
+        self.current_step += 1
+        if self.active_chaos and self.current_step >= self.chaos_end_step:
+            logger.info(f"✅ Chaos ended: {self.active_chaos.description}")
+            self.active_chaos = None
     
     def is_active(self) -> bool:
         """Check if chaos is currently active."""

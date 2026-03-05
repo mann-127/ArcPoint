@@ -16,5 +16,17 @@ __pycache__/
 
 # Project-specific generated files
 data/historical_logs.csv
+data/*.csv
 models/*.pkl
 
+# Pytest and coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Build artifacts
+build/
+dist/
+*.egg-info
+
+arcpoint.pdf

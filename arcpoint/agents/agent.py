@@ -5,8 +5,8 @@ Uses Claude/OpenAI to reason about routing decisions based on real-time system c
 import logging
 import json
 from typing import Dict, Optional
-from context_api import ContextAPI
-from prompts import ROUTING_SYSTEM_PROMPT, ROUTING_QUERY_TEMPLATE
+from .context_api import ContextAPI
+from .prompts import ROUTING_SYSTEM_PROMPT, ROUTING_QUERY_TEMPLATE
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)

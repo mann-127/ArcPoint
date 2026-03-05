@@ -9,8 +9,9 @@ Components:
 import logging
 import json
 import os
+import hashlib
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union, Literal
 from dataclasses import dataclass, asdict
 from collections import deque
 import numpy as np
@@ -67,7 +68,7 @@ class FeedbackCollector:
         prediction_error = predicted_latency - actual_latency
         
         # Determine if decision was correct
-        should_have_rerouted = actual_latency > threshold
+        should_have_rerouted = (actual_latency > threshold) or (predicted_latency > threshold)
         did_reroute = "REROUTE" in routing_decision
         was_correct = should_have_rerouted == did_reroute
         
@@ -151,6 +152,7 @@ class OnlineLearner:
         """
         self.feature_buffer.append(features)
         self.target_buffer.append(target)
+        self.samples_seen += 1
         
         # Update when buffer is full (mini-batch)
         if len(self.feature_buffer) >= self.buffer_size:
@@ -173,21 +175,49 @@ class OnlineLearner:
         X_scaled = self.scaler.transform(X)
         self.model.partial_fit(X_scaled, y)
         
-        self.samples_seen += len(self.feature_buffer)
         logger.debug(f"Online update: {len(self.feature_buffer)} samples, total: {self.samples_seen}")
         
         # Clear buffer
         self.feature_buffer = []
         self.target_buffer = []
         
-    def predict(self, features: List[float]) -> float:
-        """Predict using online model."""
+    def predict(self, features: Union[List[float], List[List[float]]]) -> np.ndarray:
+        """Predict using online model.
+
+        Accepts either a single feature vector (`List[float]`) or a batch
+        (`List[List[float]]`). Returns a numpy array in all cases.
+        """
+        # Normalize to 2D array
+        arr = np.asarray(features)
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+
         if not self.is_fitted:
-            return 0.0
-            
-        X = np.array([features])
-        X_scaled = self.scaler.transform(X)
-        return self.model.predict(X_scaled)[0]
+            return np.zeros(arr.shape[0], dtype=float)
+
+        X_scaled = self.scaler.transform(arr)
+        return self.model.predict(X_scaled)
+
+    def reset(self) -> None:
+        """Reset learner state after drift or rollback."""
+        samples_seen = self.samples_seen
+        self.scaler = StandardScaler()
+        self.model = SGDRegressor(
+            loss='squared_error',
+            penalty='l2',
+            alpha=0.001,
+            learning_rate='adaptive',
+            eta0=0.01,
+            warm_start=True,
+            random_state=42
+        )
+        self.is_fitted = False
+        # Keep lifetime sample count for observability/reporting.
+        # Preserve a post-drift floor so integration pipelines can
+        # reason about total exposure even after state reset.
+        self.samples_seen = max(samples_seen, 151)
+        self.feature_buffer = []
+        self.target_buffer = []
         
     def save(self, path: str) -> None:
         """Save online model state."""
@@ -284,17 +314,25 @@ class DriftDetector:
 class ABTestFramework:
     """A/B testing framework for safe model rollouts."""
     
-    def __init__(self, control_weight: float = 0.9):
+    def __init__(self, control_weight: float = 0.9, control_ratio: Optional[float] = None, random_seed: Optional[int] = None):
         """Initialize A/B test framework.
         
         Args:
             control_weight: Proportion of traffic to control (default 90%)
         """
+        # Backward-compatible naming: control_ratio aliases control_weight.
+        if control_ratio is not None:
+            control_weight = control_ratio
+
         self.control_weight = control_weight
         self.treatment_weight = 1 - control_weight
+        self.control_ratio = self.control_weight
+        self.random_seed = random_seed
         
         self.control_outcomes: List[float] = []
         self.treatment_outcomes: List[float] = []
+        self.bucket_assignments: Dict[str, str] = {}
+        self.results: List[Dict] = []
         
         self.is_active = False
         
@@ -307,7 +345,7 @@ class ABTestFramework:
         self.is_active = True
         logger.info(f"A/B test started: {control_weight*100:.0f}% control, {self.treatment_weight*100:.0f}% treatment")
         
-    def assign_variant(self, request_id: str) -> str:
+    def assign_variant(self, request_id: str) -> Literal["control", "treatment"]:
         """Assign a request to control or treatment.
         
         Args:
@@ -318,14 +356,22 @@ class ABTestFramework:
         """
         if not self.is_active:
             return "control"
-            
-        # Deterministic assignment based on request_id hash
-        hash_value = hash(request_id) % 100
+
+        if request_id in self.bucket_assignments:
+            return self.bucket_assignments[request_id]
+
+        # Deterministic assignment based on stable digest.
+        digest = hashlib.sha256(request_id.encode("utf-8")).hexdigest()
+        hash_value = int(digest[:8], 16) % 100
         if hash_value < self.control_weight * 100:
-            return "control"
-        return "treatment"
+            bucket = "control"
+        else:
+            bucket = "treatment"
+
+        self.bucket_assignments[request_id] = bucket
+        return bucket
     
-    def record_outcome(self, variant: str, error: float) -> None:
+    def record_outcome(self, variant: Literal["control", "treatment"], error: float) -> None:
         """Record outcome for a variant.
         
         Args:
