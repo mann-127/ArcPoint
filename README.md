@@ -17,7 +17,7 @@ ArcPoint is a production-grade request routing engine that combines ML-based lat
 
 ArcPoint decomposes request routing into five complementary subsystems:
 
-(docs/arcpoint-system-architecture.png)
+[ArcPoint Architecture](docs/arcpoint-system-architecture.png)
 
 ### Five Core Subsystems
 
